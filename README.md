@@ -1,5 +1,5 @@
 # RINEXAV - GNSS Pernament Station Selection System Based on Qualitative Analysis of RINEX files
-<img src="main_scheme.png" alt="main_scheme" width="400" height="500"><br>
+<img src="main_scheme.png" alt="main_scheme" width="700" height="200"><br>
 Install the latest Python version
 The Python can be found in the following link: https://www.python.org/downloads/.<br>
 A Python version 3.8 or higher is recommended.
