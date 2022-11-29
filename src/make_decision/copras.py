@@ -1,12 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb 24 10:05:23 2022
-
-@author: filip
-"""
-
-# Required Libraries
-import matplotlib.pyplot as plt
 import numpy as np
 
 def calculate_rank(vector):
@@ -50,26 +41,3 @@ def copras_method(dataset, weights, criterion_type):
     rank = calculate_rank(vector)
 
     return rank
-
-
-# COPRAS
-
-# Weights
-#weights = np.array([0.28, 0.14, 0.05, 0.24, 0.19, 0.05, 0.05])
-
-# Load Criterion Type: 'max' or 'min'
-#criterion_type = ['max', 'max', 'max', 'min', 'min', 'min', 'min']
-
-# Dataset
-#dataset = np.array([
-                    # [75.5, 420,	 74.2,	2.8,	21.4,	0.37,  	0.16],   #a1
-                    # [95,   91,	 70,	  2.68,	22.1,	0.33,	  0.16],   #a2
-                    # [770,  1365, 189,	  7.9,	16.9,	0.04,	  0.08],   #a3
-                    # [187,  1120, 210,	  7.9,	14.4,	0.03,	  0.08],   #a4
-                    # [179,  875,	 112,	  4.43,	9.4,	0.016,	0.09],   #a5
-                    # [239,  1190, 217,	  8.51,	11.5,	0.31,	  0.07],   #a6
-                    # [273,  200,	 112,	  8.53,	19.9,	0.29,	  0.06]    #a7
-                    # ])
-
-# Call COPRAS Function
-#rank = copras_method(dataset, weights, criterion_type)
