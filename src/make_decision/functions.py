@@ -83,7 +83,7 @@ class Preprocessing:
         while date <= lastDate:
             dirname = os.path.dirname(os.path.abspath("__file__"))
             directory = os.path.join(dirname,folder_name)
-            file_to_q = self.dir_to_pick_file(directory, date, "_q.csv")
+            file_to_q = Preprocessing.dir_to_pick_file(self, directory, date, "_q.csv")
             
             daily_q = pd.read_csv(file_to_q, index_col=[0,1], header=[0,1])
             
@@ -102,6 +102,7 @@ class Preprocessing:
             date += datetime.timedelta(days=1)
         
         df = pd.concat([snr_mean, obs_mean, gaps_mean, mp_mean], axis=1)
+        print(df)
         return df
 
 
@@ -143,7 +144,6 @@ class Preprocessing:
                 else:
                     mean_par = pd.DataFrame(selected_dataset.loc[:, (freq[0], freq[1], par)].T.mean(), columns=[(freq[0], freq[1], par)])
                     full_mean_long = pd.concat([full_mean_long, mean_par], axis=1, join='outer')
-
             
         if selected_dataset.shape[1] == 4*len(freq_done):
             return full_mean_short
