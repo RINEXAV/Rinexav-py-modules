@@ -3,7 +3,7 @@
 <li>main file to run script: make_decision.py </li>
 <li>dataset uses in software: data_to_script (daily status files) </li>
 <h3>Processing diagram</h3><br>
-<img src="make_decision_scheme.png" alt="mod2_scheme" width="400" height="500"><br>
+<img src="make_decision_scheme.png" alt="mod2_scheme" width="650" height="750"><br>
 <h4>Example input in make_decision:</h4>
 <li>date = datetime.date(2022,1,1) #start date of period</li>
 <li>lastDate = datetime.date(2022,1,31) #end date of period</li>

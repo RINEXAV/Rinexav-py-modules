@@ -1,0 +1,29 @@
+start_date:
+   day: 1
+   month: 1
+   year: 2021
+   
+lastDate:
+  day: 31
+  month: 3
+  year: 2021
+
+sys_bar:
+  - C
+  - G
+  
+freq_done:
+ - 'G,2W'
+ - 'G,2X'
+
+weights:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  
+ileprocent: 90
+clustering_method: "KMeans"
+MDCA_method: "TOPSIS"
+num_points: 100
