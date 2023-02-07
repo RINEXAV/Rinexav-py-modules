@@ -17,11 +17,11 @@ freq_done:
  - 'G,2X'
 
 weights:
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
+  - 1 #priority level
+  - 1 #No. Obs.
+  - 1 #SNR
+  - 1 #Multipath
+  - 1 #Gaps
   
 ileprocent: 90
 clustering_method: "KMeans"
