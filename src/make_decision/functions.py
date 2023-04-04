@@ -102,7 +102,6 @@ class Preprocessing:
             date += datetime.timedelta(days=1)
         
         df = pd.concat([snr_mean, obs_mean, gaps_mean, mp_mean], axis=1)
-        print(df)
         return df
 
 
@@ -159,14 +158,9 @@ class Preprocessing:
 
         :return: traversed mean parameters with failed column names but it's only halfproduct
         '''
-        n=0
-        for pars in range(len(freq_done)-1):
-            rename_dic = dict(zip(mean_parameters.columns[4+n:8+n], mean_parameters.columns[:4]))
-            first_four = mean_parameters.iloc[:, :4]
-            next_four = mean_parameters.iloc[:, 4+n:8+n]
-            first_four.combine_first(next_four.rename(columns=rename_dic))
-            mean_parameters.update(mean_parameters.iloc[:, 4+n:8+n].set_axis(mean_parameters.columns[:4], axis=1), overwrite=False)
-            n+=4
+        for x,y in zip([0,1,2,3]*(len(freq_done)), range((4*len(freq_done)-4))):
+            mean_parameters.iloc[:, x] = mean_parameters.iloc[:, x].fillna(mean_parameters.iloc[:, y+4])
+            
         return mean_parameters
 
 
@@ -184,6 +178,7 @@ class Preprocessing:
 
             mean_parameters_trav.iloc[:, :4].loc[hahs.index] = hahs
             n+=4
+            
         to_go = mean_parameters_trav.iloc[:,:4]
         columns = to_go.columns.to_list()
         to_go.columns = [columns[0][2], columns[1][2], columns[2][2], columns[3][2]]

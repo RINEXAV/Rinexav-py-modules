@@ -4,6 +4,9 @@ import datetime
 from functions import Preprocessing as pre
 from functions import Selecting as sel
 import yaml
+import warnings
+
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 def main():
 
@@ -11,6 +14,8 @@ def main():
         config = yaml.safe_load(f)
         
     freq_done = [tuple(map(str, x.split(','))) for x in config['freq_done']]
+    
+    print(freq_done)
     date = datetime.date(config['start_date']['year'],
                          config['start_date']['month'],
                          config['start_date']['day'])
