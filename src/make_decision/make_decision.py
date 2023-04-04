@@ -3,18 +3,27 @@ import pandas as pd
 import datetime
 from functions import Preprocessing as pre
 from functions import Selecting as sel
+import yaml
 
 def main():
 
-    date = datetime.date(2021,1,1)
-    lastDate = datetime.date(2021,1,2)
-    sys_bar = ['C', 'G']
-    freq_done =  [('C', '2I'), ('C', '1X'), ('G', '1C'), ('G', '1W')]
-    weights = [1, 1, 1, 1, 1]
-    ileprocent = 90
-    clustering_method = "KMeans"
-    MDCA_method = "TOPSIS"
-    num_points = 100
+    with open("config.yml", "r") as f:
+        config = yaml.safe_load(f)
+        
+    freq_done = [tuple(map(str, x.split(','))) for x in config['freq_done']]
+    date = datetime.date(config['start_date']['year'],
+                         config['start_date']['month'],
+                         config['start_date']['day'])
+    
+    lastDate = datetime.date(config['lastDate']['year'],
+                         config['lastDate']['month'],
+                         config['lastDate']['day'])
+    num_points = config['num_points']
+    ileprocent = config['ileprocent']
+    MDCA_method = config['MDCA_method']
+    clustering_method = config['clustering_method']
+    weights = config['weights']
+    sys_bar = config['sys_bar']
 
     if date <= lastDate:
         ileprocent = ileprocent
