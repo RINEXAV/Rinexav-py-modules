@@ -12,6 +12,8 @@ import re
 import subprocess
 import time
 import sys
+import warnings
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 class Downloader:
 
@@ -101,10 +103,13 @@ class Downloader:
 
         :return: local filename path to downloaded file
         '''
+
         local_filename = os.path.join(os.getcwd(), full_file_name)
-        lf = open(local_filename, "wb")             
+        lf = open(local_filename, "wb")  
         ftps.retrbinary('RETR ' + full_file_name, lf.write)
         lf.close()
+            
+            
         return local_filename
 
 
@@ -127,6 +132,8 @@ class Downloader:
         :param: gz, rnx, raport_gfz, raport_bkg: in default False, 
                 if True that this file will be removed
         '''
+        
+
         if gz == True:
             os.remove(local_filename)
         if crx == True:
@@ -253,10 +260,10 @@ class Downloader:
 
 def main():
 
-    day_s = 1
+    day_s = 3
     month_s = 11
     year_s = 2022
-    day_e = 1
+    day_e = 3
     month_e = 11
     year_e = 2022
     downloader = Downloader(day_s, month_s, year_s, day_e, month_e, year_e)
@@ -280,27 +287,32 @@ def main():
         mgex_daily = downloader.looking_for_rinex3mo(ftps)
 
         i=1
-        for station in mgex_daily:
+        for station in mgex_daily[:]:
             while True:
-                now2 = datetime.datetime.now()
-                delta = (((now2 - now).seconds)//60)%60
-                downloader.progress_bar(i, mgex_daily, station, year, doy, delta)
-
+                print(station)
+                # now2 = datetime.datetime.now()
+                # delta = (((now2 - now).seconds)//60)%60
+                # downloader.progress_bar(i, mgex_daily, station, year, doy, delta)
                 try:
+                    print('TRY copy')
                     local_filename = downloader.copy_rinex_file(ftps, station)    
                     try:
+                        print('TRY ungzip')
                         downloader.ungzip(local_filename)
                         
                     except:
                         print("badgzip")
                         downloader.remove_unneeded_file(local, station, local_filename, gz=True, crx=True)
                         break
+                    
                     os.system(f"cd {local} && crx2rnx {station[:-3]}")
                     try:
+                        print('TRY GFZRNX')
                         subprocess.check_output(f"cd {local} && gfzrnx_1.15.exe /dev/null -finp {local}\{station[:-6]}rnx -stk_obs -fout {local}\{station[:-6]}rnx_stk /dev/null", shell=True, stderr=subprocess.STDOUT)
                     except:
                         break
-
+                    
+                    print('TRY BNC')
                     os.system(f"cd {local} && bnc.exe.lnk --nw /dev/null --key reqcAction Analyze --key reqcObsFile {local_filename[:-6]}rnx --key reqcOutLogFile {local_filename[:-6]}txt --key reqcLogSummaryOnly 2 --nw")
 
                     stat2 = downloader.looking_for_signal_parameters(stat2, local, station)
@@ -309,6 +321,7 @@ def main():
                     downloader.remove_unneeded_file(local, station, local_filename, gz=True, crx=True, rnx=True, raport_gfz=True, raport_bkg=True)
 
                 except OSError:
+                    print('OSError')
                     try:
                         time.sleep(1)
                         print("Connection was already closed")
@@ -318,10 +331,23 @@ def main():
                         continue
                             
                     except:
-                        print("INNY BŁĄD")
+                        print("DIFFERENT ERROR")
                         break
-                        
-                    continue
+                                        
+                except EOFError:
+                    print('EOFError')
+                    downloader.remove_unneeded_file(local, station, local_filename, gz=True)
+                    try:
+                        time.sleep(1)
+                        print("Connection was already closed EOF")
+                        ftps = downloader.login_to_cddis('gdc.cddis.eosdis.nasa.gov', 'anonymous', 'email')
+                        ftps = downloader.to_directory(ftps, year, doy, endpoint)
+                        print("FTP connection has been reset")
+                        break
+                            
+                    except:
+                        print("DIFFERENT ERROR")
+                        break
                 break
 
             i+=1
