@@ -289,30 +289,25 @@ def main():
         i=1
         for station in mgex_daily[:]:
             while True:
-                print(station)
-                # now2 = datetime.datetime.now()
-                # delta = (((now2 - now).seconds)//60)%60
-                # downloader.progress_bar(i, mgex_daily, station, year, doy, delta)
+
+                now2 = datetime.datetime.now()
+                delta = (((now2 - now).seconds)//60)%60
+                downloader.progress_bar(i, mgex_daily, station, year, doy, delta)
                 try:
-                    print('TRY copy')
                     local_filename = downloader.copy_rinex_file(ftps, station)    
                     try:
-                        print('TRY ungzip')
                         downloader.ungzip(local_filename)
                         
                     except:
-                        print("badgzip")
                         downloader.remove_unneeded_file(local, station, local_filename, gz=True, crx=True)
                         break
                     
                     os.system(f"cd {local} && crx2rnx {station[:-3]}")
                     try:
-                        print('TRY GFZRNX')
                         subprocess.check_output(f"cd {local} && gfzrnx_1.15.exe /dev/null -finp {local}\{station[:-6]}rnx -stk_obs -fout {local}\{station[:-6]}rnx_stk /dev/null", shell=True, stderr=subprocess.STDOUT)
                     except:
                         break
                     
-                    print('TRY BNC')
                     os.system(f"cd {local} && bnc.exe.lnk --nw /dev/null --key reqcAction Analyze --key reqcObsFile {local_filename[:-6]}rnx --key reqcOutLogFile {local_filename[:-6]}txt --key reqcLogSummaryOnly 2 --nw")
 
                     stat2 = downloader.looking_for_signal_parameters(stat2, local, station)
@@ -321,13 +316,12 @@ def main():
                     downloader.remove_unneeded_file(local, station, local_filename, gz=True, crx=True, rnx=True, raport_gfz=True, raport_bkg=True)
 
                 except OSError:
-                    print('OSError')
                     try:
                         time.sleep(1)
-                        print("Connection was already closed")
+                        #print("Connection was already closed")
                         ftps = downloader.login_to_cddis('gdc.cddis.eosdis.nasa.gov', 'anonymous', 'email')
                         ftps = downloader.to_directory(ftps, year, doy, endpoint)
-                        print("FTP connection has been reset")
+                        #print("FTP connection has been reset")
                         continue
                             
                     except:
@@ -335,15 +329,13 @@ def main():
                         break
                                         
                 except EOFError:
-                    print('EOFError')
-                    downloader.remove_unneeded_file(local, station, local_filename, gz=True)
                     try:
                         time.sleep(1)
-                        print("Connection was already closed EOF")
+                        #print("Connection was already closed EOF")
                         ftps = downloader.login_to_cddis('gdc.cddis.eosdis.nasa.gov', 'anonymous', 'email')
                         ftps = downloader.to_directory(ftps, year, doy, endpoint)
-                        print("FTP connection has been reset")
-                        break
+                        #print("FTP connection has been reset")
+                        continue
                             
                     except:
                         print("DIFFERENT ERROR")
