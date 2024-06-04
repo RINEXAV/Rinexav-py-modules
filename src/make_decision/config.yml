@@ -1,12 +1,12 @@
 start_date:
    day: 1
    month: 1
-   year: 2021
+   year: 2024
    
 lastDate:
-  day: 1
-  month: 2
-  year: 2021
+  day: 2
+  month: 1
+  year: 2024
 
 sys_bar:
   - C
@@ -30,4 +30,4 @@ weights:
 ileprocent: 90
 clustering_method: "KMeans"
 MDCA_method: "TOPSIS"
-num_points: 100
+num_points: 10

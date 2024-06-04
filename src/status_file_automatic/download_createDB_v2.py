@@ -220,7 +220,7 @@ class Downloader:
 
     def looking_for_satelite_av(self, df, local, station):
         '''
-        function take from declared file data about qavability
+        function take from declared file data about avability
         :local: path to analysing file
         :station: station which is current analysis
         :param df: empty file to this data
@@ -260,12 +260,12 @@ class Downloader:
 
 def main():
 
-    day_s = 3
-    month_s = 11
-    year_s = 2022
-    day_e = 3
-    month_e = 11
-    year_e = 2022
+    day_s = 2
+    month_s = 1
+    year_s = 2024
+    day_e = 2
+    month_e = 1
+    year_e = 2024
     downloader = Downloader(day_s, month_s, year_s, day_e, month_e, year_e)
     print("Processing...")
     local = os.getcwd()
@@ -304,7 +304,7 @@ def main():
                     
                     os.system(f"cd {local} && crx2rnx {station[:-3]}")
                     try:
-                        subprocess.check_output(f"cd {local} && gfzrnx_1.15.exe /dev/null -finp {local}\{station[:-6]}rnx -stk_obs -fout {local}\{station[:-6]}rnx_stk /dev/null", shell=True, stderr=subprocess.STDOUT)
+                        subprocess.check_output(f"cd {local} && gfzrnx_2.1.9_win11_64.exe /dev/null -finp {local}\{station[:-6]}rnx -stk_obs -fout {local}\{station[:-6]}rnx_stk /dev/null", shell=True, stderr=subprocess.STDOUT)
                     except:
                         break
                     
