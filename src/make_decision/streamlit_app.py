@@ -8,12 +8,22 @@ import os
 from functions2 import *
 import branca.colormap as cm
 import copy
+import subprocess
+import time
+import sys
+
+src_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+modules_path = os.path.join(src_path, 'modules')
+sys.path.append(modules_path)
+from database_manager_SQLite import DatabaseManager
+
 
 def filedownload(df, name):
     csv = df.to_csv(index=False)
     b64 = base64.b64encode(csv.encode()).decode()  # strings <-> bytes conversions
     href = f'<a href="data:file/csv;base64,{b64}" download="{name}.csv">Download CSV File</a>'
     return href
+
 
 st.set_page_config(
     page_title="RINEX-AV",
@@ -30,18 +40,20 @@ st.markdown("<h3 style='text-align: center; color: black;'>The application selec
 col1 = st.sidebar
 col2, col3 = st.columns((2,1))
 
-dirname = os.path.dirname(os.path.abspath("__file__"))
-directory = os.path.join(dirname,"rv3_stat")
-
-file = os.path.join(dirname, "station_coords.csv")
-IGSNetwork = pd.read_csv(file).set_index("#StationName")
+db_manager = DatabaseManager(database_name = '../database/rinexav_db.db')
+file = db_manager.fetch_all('stations', **{'1': 1})
+IGSNetwork = pd.DataFrame(file)
+IGSNetwork = IGSNetwork.iloc[:, [1, 2, 3, 4, 5, 6, 7, 9]]
+IGSNetwork.columns = ['#StationName', 'X', 'Y', 'Z', 'Latitude', 'Longitude', 'Height', 'pr_level']
+IGSNetwork = IGSNetwork.set_index('#StationName')
 IGSNetwork['stats'] = 0
+
 with st.expander("HOW TO USE"):
         st.write("""
                  -\t1. Specify the time period for the analysis (Start date, End date).\n
                  -\t2. Specify the availability of RINEX files during this time period (Avarage Percent of RINEX availability).\n
-                 -\t3. Select the clustering method for the network of stations to be split into groups (Clustering Method).\n
-                 -\t4. Select the decision making method for each set of stations separated in the previous step (Method of decision making).\n
+                 -\t3. The clustering method - KMeans - is selected automatically by the software.\n
+                 -\t4. The decision-making method - TOPSIS - is selected automatically by the software.\n
                  -\t5. Enter the number of stations evenly distributed around the world (Number of Stations).\n
                  -\t6. To proceed check the box and wait for a while.\n
                  -\t7. Select system frequencies and transmit channels (Systems, Frequencies). Wait for a while.\n
@@ -49,6 +61,26 @@ with st.expander("HOW TO USE"):
                  -\t9. Please wait for a while.\n
                  Priority level is determined using the LIST OF STATION PROPOSED TO IGS REPRO3, which can be found [here](http://acc.igs.org/repro3/repro3_station_priority_list_060819.pdf).\n""")
 
+st.sidebar.info('Click to update the list of IGS MGEX stations, their coordinates and satellite PRN numbers', icon = '⬇️')
+update_data = st.sidebar.button('UPDATE DATA', use_container_width = True)
+
+update_IGS_Network = os.path.abspath(os.path.join(os.path.dirname(__file__), '../modules/update_IGS_Network_DATABASE.py'))
+update_Satellite_list = os.path.abspath(os.path.join(os.path.dirname(__file__), '../modules/update_Satellite_list_DATABASE.py'))
+
+if update_data:
+    try:        
+        igs_message = st.sidebar.info('Updating IGS Network data...')
+        IGS_Network_list_update = subprocess.run(['python', update_IGS_Network], check = True, capture_output = True, text = True)
+        igs_message.empty()
+        sat_message = st.sidebar.info('Updating satellite PRNs data...')
+        Satellite_list_update = subprocess.run(['python', update_Satellite_list], check = True, capture_output = True, text = True)
+        sat_message.empty()
+        results_message = st.sidebar.success('Data has been updated successfully!')
+    except subprocess.CalledProcessError:
+        results_message = st.sidebar.error('An error occurred while updating the data!')
+    finally:
+        time.sleep(3)
+        st.rerun()
 
 date = st.sidebar.date_input('Start date', datetime.date(2022,1,1))
 
@@ -56,23 +88,22 @@ if date:
     lastDate = st.sidebar.date_input('End date', datetime.date(2022,1,15))
     if date < lastDate:
         ileprocent = st.sidebar.slider('Avarage Percent of RINEX availability', 30, 100, value=90, step=1)
-        clustering_method = st.sidebar.selectbox('Clustering Method', ["KMeans", "AgglomerativeClustering"])
-        method = st.sidebar.selectbox('Method of decision making', ["TOPSIS", "COPRAS"])
         num_points = st.sidebar.slider('Number of Stations', 5, IGSNetwork.shape[0], value=100, step=1)
         
-    else:
-        
+    else:      
         st.error("ENTER THE RELEVANT DATE RANGE")
         st.stop()
 
 if st.sidebar.checkbox('<-- Load further parameters'):
     try:
-        df, i, sys = process_file(IGSNetwork, "rv3_stat", date, lastDate)
-    except:
-        st.error("ENTER THE RELEVANT DATE RANGE")
+        df, i, sys = process_file(IGSNetwork, db_manager, date, lastDate)
+    except IndexError:
+        st.warning("NO DATA AVAILABLE FOR SELECTED DATE RANGE")
         st.stop()
 
     with col1:
+        SORT_ORDER_GNSS = ["G", "R", "E", "C", "J", "I", "S"]
+        sys.sort(key = lambda x: SORT_ORDER_GNSS.index(x))
         sys_bar1 = st.sidebar.multiselect('Systems', sys, default=sys[0])
         
         freq1 = df.loc[:, (sys_bar1, slice(None), slice(None))].columns.to_list()
@@ -83,8 +114,9 @@ if st.sidebar.checkbox('<-- Load further parameters'):
 
 
     freq1 = sorted(list(set(hz)))
+    freq1.sort(key = lambda x: SORT_ORDER_GNSS.index(x[0]))
     if freq1:
-        freq_done1 =  st.sidebar.multiselect('Frequencies', freq1, default=freq1[0])
+        freq_done1 =  st.sidebar.multiselect('Frequencies', freq1, default=[freq1[0]])
         par = ['SNR', 'Number of obsevations', 'GAPS', 'MULTIPATH']
         st.sidebar.write('WEIGHT:')
         k = int(st.sidebar.number_input('Priority Level', 1, 100))
@@ -136,9 +168,9 @@ if st.sidebar.checkbox('<-- Load further parameters'):
         IGSNetwork = IGSNetwork[IGSNetwork.loc[:,"stats"]>=ileprocent]
             
         if IGSNetwork.shape[0] >= num_points:
-            IGSNetwork = dividing_stations(IGSNetwork, clustering_method, num_points)
-            IGSNetwork = MDCA(IGSNetwork, method, ich_all, num_points, len(freq_done1))
-            wybor = only_ones(IGSNetwork, method)
+            IGSNetwork = dividing_stations(IGSNetwork, num_points)
+            IGSNetwork = MDCA(IGSNetwork, ich_all, num_points, len(freq_done1))
+            wybor = only_ones(IGSNetwork)
             wybor = wybor.iloc[:,3:]
             IGSNetwork = IGSNetwork.iloc[:,3:]
             

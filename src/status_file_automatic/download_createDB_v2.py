@@ -12,8 +12,16 @@ import re
 import subprocess
 import time
 import sys
+import sqlite3
 import warnings
+
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
+pd.set_option('future.no_silent_downcasting', True)
+src_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+modules_path = os.path.join(src_path, 'modules')
+sys.path.append(modules_path)
+from database_manager_SQLite import DatabaseManager
+
 
 class Downloader:
 
@@ -82,18 +90,21 @@ class Downloader:
     def progress_bar(self, i, iter_list, station, year, doy, delta):
         '''
         :param i: to control the progress bar
-        :iter_list: list to iterate and make fill bar
-        :station: only for printing which station is analysis
-        :year, doy: only for printing which day is analysis
-        :delta: how many time data from this station downloading
+        :param iter_list: list to iterate and make fill bar
+        :param station: only for printing which station is analysis
+        :param year, doy: only for printing which day is analysis
+        :param delta: how many time data from this station downloading
 
         :return: progress bar
         '''
         percent = ("{0:." + str(1) + "f}").format(100 * (i / float(len(iter_list))))
         filledLength = int((len(iter_list)//4) * (i//4) // (float(len(iter_list))//4))
         bar = '█' * filledLength + '-' * (len(iter_list)//4 - filledLength)
+        hours = delta // 3600
+        minutes = (delta % 3600) // 60
+        seconds = delta % 60
         return print(f"\rStation name: {station[:9]}, YEAR:{year} | DOY:{doy}, \
-                     Duration: {delta} m   |{bar}| {percent}%", end="\r")
+                     Duration: {str(hours).zfill(2)}:{str(minutes).zfill(2)}:{str(seconds).zfill(2)}   |{bar}| {percent}%", end="\r")
 
 
     def copy_rinex_file(self, ftps, full_file_name):
@@ -139,38 +150,36 @@ class Downloader:
         if crx == True:
             os.remove(local_filename[:-3])
         if rnx == True:
-            os.remove(f"{local}/{station[:-6]}rnx")
+            os.remove(f"{local}\\{station[:-6]}rnx")
         if raport_gfz == True:
-            os.remove(f"{local}/{station[:-6]}txt")
+            os.remove(f"{local}\\{station[:-6]}txt")
         if raport_bkg == True:
-            os.remove(f"{local}/{station[:-6]}rnx_stk")
+            os.remove(f"{local}\\{station[:-6]}rnx_stk")
 
 
 
-    def empty_mgex_df_to_collect_data(self, local):
+    def empty_mgex_df_to_collect_data(self, database_func):
         '''
-        function creates empty dataframe to collecting avability 
-        of each satellites for each station by day
+        Function creates empty dataframe to collecting avability 
+        of each satellites for each station by day.
         :param local: from this path comes file with MGEX stations 
 
         :return: empty dataframe with index like satellites PRN and columns 
                 like MGEX stations
         '''
-        file_sat = f"{local}\data_to_script\sat.txt"
-        sat = pd.read_csv(file_sat, header=None)
+        sat = database_func.fetch_all('satellites', **{'1': 1})
+        sat = pd.DataFrame(sat)
         arrays = [np.array(sat.iloc[:,0]),
-                np.array(sat.iloc[:,1])]
+                  np.array(sat.iloc[:,1])]
 
         index = pd.MultiIndex.from_arrays(arrays, names=('sys_name', 'PRN'))
-        mgex = pd.read_csv(f"{local}\data_to_script\MGEX_wsp.csv", index_col=1)
-        IGSNetwork = pd.DataFrame(index=index, columns=mgex.index)
-
+        IGSNetwork = pd.DataFrame(index=index)
         return IGSNetwork
 
 
     def empty_quality_df_to_collect_data(self):
         '''
-        function creates empty dataframe to collecting quality of each station by day
+        Function creates empty dataframe to collecting quality of each station by day.
         :param local: from this path comes file with MGEX stations
         :return: empty dataframe with multiple index and columns
         '''
@@ -184,7 +193,7 @@ class Downloader:
 
     def finder(self, directory, phrase):
         '''
-        function split text file and find declared phrase
+        Function split text file and find declared phrase.
         :param directory: path to file which into will be looking for phrase 
         
         :return: lines of text only where the phrase was detected
@@ -198,9 +207,9 @@ class Downloader:
 
     def looking_for_signal_parameters(self, stat2, local, station):
         '''
-        function take from lines data related with signal quality
-        :local: path to analysing file
-        :station: station which is current analysis
+        Function take from lines data related with signal quality.
+        :param local: path to analysing file
+        :param station: station which is current analysis
         :param stat2: empty file to this data
         
         :return: dataframe with all statistics relating to signal quality
@@ -211,7 +220,7 @@ class Downloader:
         names = ['snr', 'obs', 'gaps', 'multipath']
 
         for par1, name in zip(parameters, names):
-            splitted_lines = self.finder(f"{local}\{station[:-6]}txt", par1)
+            splitted_lines = self.finder(f"{local}\\{station[:-6]}txt", par1)
             for line in splitted_lines:
                 stat2.loc[(line[0][0], line[1][:2]), (station[:9],name)] = float(line[-1])
 
@@ -220,14 +229,14 @@ class Downloader:
 
     def looking_for_satelite_av(self, df, local, station):
         '''
-        function take from declared file data about avability
-        :local: path to analysing file
-        :station: station which is current analysis
+        Function take from declared file data about avability.
+        :param local: path to analysing file
+        :param station: station which is current analysis
         :param df: empty file to this data
         
         :return: dataframe with all statistics relating to available
         '''
-        with open(f"{local}\{station[:-6]}rnx_stk") as f:
+        with open(f"{local}\\{station[:-6]}rnx_stk") as f:
             sats = [re.findall(r"\s[GRECJI][0-9][0-9]\s", line)[0] 
                     for line in f if re.findall(r"\s[GRECJI][0-9][0-9]\s", line)]
             
@@ -240,41 +249,112 @@ class Downloader:
 
         return df
 
-
-    def looking_for_rinex3mo(self, ftps):
+    
+    def looking_for_rinex3mo(self, ftps, database_func):
         '''
-        looking for 30 second rinex file which will be MGEX
-        :ftps: connection to the server from which the file is to be downloaded
+        Looking for 30 second rinex file which will be MGEX.
+        :param ftps: connection to the server from which the file is to be downloaded
         
         :return: list with file which will be specify by settings
         '''
         mo_crx_gz = [st for st in ftps.nlst() if st.endswith('01D_30S_MO.crx.gz')]
         
-        mgex_file = f"{os.getcwd()}\data_to_script\MGEX_wsp.csv"
-        mgex_list = pd.read_csv(mgex_file, index_col=1).index.to_list()
+        mgex_file = database_func.fetch_all('stations', **{'1': 1})
+        mgex_list = pd.DataFrame(mgex_file)
+        mgex_list.set_index(mgex_list.columns[1], inplace = True)
+        mgex_list = mgex_list.index.tolist()
         
         mgex_daily = [_ for _ in mo_crx_gz for i in mgex_list if _[:9] == i]
-
         return mgex_daily
-
+    
+    
+    def availability_to_database(self, dataframe, db_func, station, doy, year):
+        '''
+        Transfers RINEX file availability data to the database.
+        :param dataframe: the dataframe object from which the availability data is taken
+        :param db_func: database management function
+        :param station: station for which availability data is processed
+        :param doy: the day for which the availability data is processed
+        :param year: the year for which the availability data is processed
+        '''
+        for (sys_name, prn) in dataframe.index:
+            try:
+                availability = dataframe.at[(sys_name, prn), station[:9]]
+                table = 'data_availability'
+                values = [year, doy, sys_name, prn, station[:9], availability]
+                db_func.insert(table, *values)
+            except sqlite3.IntegrityError:
+                db_func.connection.rollback()
+        
+        
+    def quality_to_database(self, dataframe, db_func, station, doy, year):
+        '''
+        Transfers RINEX file quality data to the database.
+        :param dataframe: the dataframe object from which the quality data is taken
+        :param db_func: database management function
+        :param station: station for which quality data is processed
+        :param doy: the day for which the quality data is processed
+        :param year: the year for which the quality data is processed
+        '''
+        for (sys_name, frequency) in dataframe.index:
+            try:
+                snr = dataframe.loc[(sys_name, frequency), (station[:9], 'snr')]
+                obs = dataframe.loc[(sys_name, frequency), (station[:9], 'obs')]
+                gaps = dataframe.loc[(sys_name, frequency), (station[:9], 'gaps')]
+                multipath = dataframe.loc[(sys_name, frequency), (station[:9], 'multipath')]
+                table = 'data_quality'
+                values = [year, doy, sys_name, frequency, station[:9], float(snr), float(obs), float(gaps), float(multipath)]
+                db_func.insert(table, *values)
+            except sqlite3.IntegrityError:
+                db_func.connection.rollback()
+                
+                
+    def update_stations_and_satellites_data(self, update_IGS_Network_file_path, update_Satellite_list_file_path):
+        '''
+        Updates data on IGS stations and satellite PRN numbers in the database.
+        :param update_IGS_Network_file_path: path to the script responsible for updating the IGS station
+        :param update_Satellite_list_file_path: path to the script responsible for updating satellite PRN numbers
+        '''
+        try:
+            IGS_Network_list_update = subprocess.run(['python', update_IGS_Network_file_path], check = True, capture_output = True, text = True)
+            Satellite_list_update = subprocess.run(['python', update_Satellite_list_file_path], check = True, capture_output = True, text = True)
+            print(IGS_Network_list_update.stdout)
+            print(Satellite_list_update.stdout)
+        except subprocess.CalledProcessError as e:
+            print(f"Error occurred: {e.stderr}")
+        finally:
+            print("Processing...")   
+        
 
 def main():
 
-    day_s = 2
+    day_s = 1
     month_s = 1
     year_s = 2024
-    day_e = 2
+    day_e = 1
     month_e = 1
     year_e = 2024
+    save_data_to_csv = True
+    save_data_to_database = True
+    update_data = True
     downloader = Downloader(day_s, month_s, year_s, day_e, month_e, year_e)
-    print("Processing...")
+    print("Updating data...")
+    db_manager = DatabaseManager(database_name = '../database/rinexav_db.db')    
     local = os.getcwd()
-    df = downloader.empty_mgex_df_to_collect_data(local)
+    df = downloader.empty_mgex_df_to_collect_data(db_manager)
     date = downloader.start_date()
     lastDate  = downloader.end_date()
     daySteps  = 1 
     ftps = downloader.login_to_cddis('gdc.cddis.eosdis.nasa.gov', 'anonymous', 'email')
-
+    
+    update_IGS_Network = os.path.abspath(os.path.join(os.path.dirname(__file__), '../modules/update_IGS_Network_DATABASE.py'))
+    update_Satellite_list = os.path.abspath(os.path.join(os.path.dirname(__file__), '../modules/update_Satellite_list_DATABASE.py'))
+    
+    if update_data:
+        downloader.update_stations_and_satellites_data(update_IGS_Network, update_Satellite_list)  
+    else:
+        print("Processing...")
+    
     while date <= lastDate:
 
         now = datetime.datetime.now()
@@ -284,14 +364,14 @@ def main():
         endpoint = date.strftime('%y')
         ftps = downloader.to_directory(ftps, year, doy, endpoint)
         stat2 = downloader.empty_quality_df_to_collect_data()
-        mgex_daily = downloader.looking_for_rinex3mo(ftps)
+        mgex_daily = downloader.looking_for_rinex3mo(ftps, db_manager)
 
         i=1
         for station in mgex_daily[:]:
             while True:
 
                 now2 = datetime.datetime.now()
-                delta = (((now2 - now).seconds)//60)%60
+                delta = int((now2 - now).total_seconds())
                 downloader.progress_bar(i, mgex_daily, station, year, doy, delta)
                 try:
                     local_filename = downloader.copy_rinex_file(ftps, station)    
@@ -302,9 +382,9 @@ def main():
                         downloader.remove_unneeded_file(local, station, local_filename, gz=True, crx=True)
                         break
                     
-                    os.system(f"cd {local} && crx2rnx {station[:-3]}")
+                    os.system(f"cd {local} && CRX2RNX_4.1.0 {station[:-3]}")
                     try:
-                        subprocess.check_output(f"cd {local} && gfzrnx_2.1.9_win11_64.exe /dev/null -finp {local}\{station[:-6]}rnx -stk_obs -fout {local}\{station[:-6]}rnx_stk /dev/null", shell=True, stderr=subprocess.STDOUT)
+                        subprocess.check_output(f"cd {local} && gfzrnx_2.1.9_win11_64.exe /dev/null -finp {local}\\{station[:-6]}rnx -stk_obs -fout {local}\\{station[:-6]}rnx_stk /dev/null", shell=True, stderr=subprocess.STDOUT)
                     except:
                         break
                     
@@ -312,9 +392,13 @@ def main():
 
                     stat2 = downloader.looking_for_signal_parameters(stat2, local, station)
                     df = downloader.looking_for_satelite_av(df, local, station)
-
+                    
+                    if save_data_to_database:
+                        downloader.availability_to_database(df, db_manager, station, doy, year)
+                        downloader.quality_to_database(stat2, db_manager, station, doy, year)
+                    
                     downloader.remove_unneeded_file(local, station, local_filename, gz=True, crx=True, rnx=True, raport_gfz=True, raport_bkg=True)
-
+                    
                 except OSError:
                     try:
                         time.sleep(1)
@@ -341,12 +425,12 @@ def main():
                         print("DIFFERENT ERROR")
                         break
                 break
-
+                
             i+=1
-        date += datetime.timedelta(days=daySteps)
-        
-        df.to_csv(f"{local}/download_data/{year}_{doy}.csv", index = True) 
-        stat2.to_csv(f"{local}/download_data/{year}_{doy}_q.csv", index = True)
+        date += datetime.timedelta(days=daySteps)   
+        if save_data_to_csv:
+            df.to_csv(f"{local}\\download_data\\{year}_{doy}.csv", index = True) 
+            stat2.to_csv(f"{local}\\download_data\\{year}_{doy}_q.csv", index = True)
     
 if __name__ == "__main__":
     main()

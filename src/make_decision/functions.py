@@ -11,6 +11,8 @@ import datetime
 from sklearn.cluster import KMeans, AgglomerativeClustering
 import topsis_FG as top
 import copras as cop
+import sys
+
 
 class Preprocessing:
     def __init__(self, date, lastDate, sys_bar, freq_done, weights):
@@ -38,13 +40,14 @@ class Preprocessing:
                     IGSNetwork.loc[column,'stats'] = IGSNetwork.loc[column,'stats'] + 1
                 except(KeyError):
                     continue     
+
         return IGSNetwork
 
 
-    def availability(self, IGSNetwork, folder_name, date, lastDate):
+    def availability(self, db_func, IGSNetwork, date, lastDate):
         '''
+        :param db_func: database management function
         :param IGSNetwork: dataframe with MGEX stations and their parameters
-        :param folder_name: name of folder where are daily status file
         :param date: start date by which analyst will begin
         :param lastDate: end date by which the analysis will be performed
         
@@ -52,23 +55,28 @@ class Preprocessing:
         '''
         IGSNetwork['stats'] = 0
         i = (lastDate - date).days + 1
-        dirname = os.path.dirname(os.path.abspath("__file__"))
-        directory = os.path.join(dirname,folder_name)
         
         while date <= lastDate:
-            file_to_av = self.dir_to_pick_file(directory, date, ".csv")
-            plik = pd.read_csv(file_to_av, index_col=0)
+            conditions = {'year': date.year, 'day_of_year': date.timetuple().tm_yday}
+            data_availability = db_func.fetch_all('data_availability', **conditions)
+            plik = pd.DataFrame(data_availability)
+            plik = plik.iloc[:, [2,3,4,5]]
+            plik.columns = ['sys_name', 'PRN', 'station_name', 'availability']
+            unique_pairs = plik[['sys_name', 'PRN']].drop_duplicates()
+            plik = plik.pivot_table(index = ['sys_name', 'PRN'], columns = 'station_name', values = 'availability', dropna = False)
+            plik = plik.loc[unique_pairs.set_index(['sys_name', 'PRN']).index]
+
             IGSNetwork = self.how_empty(plik, IGSNetwork)
             date += datetime.timedelta(days=1)
         IGSNetwork.loc[:,'stats'] = ((i-IGSNetwork.iloc[:,7:8])/i) * 100
-        
+
         return IGSNetwork
 
 
-    def process_file(self, folder_name, date, lastDate):
+    def process_file(self, db_func, date, lastDate):
         '''
-        main function to generate mean statistics from all avialble canals
-        :param folder_name: name of folder where are daily status file
+        Main function to generate mean statistics from all avialble canals.
+        :param db_func: database management function
         :param date: start date by which analyst will begin
         :param lastDate: end date by which the analysis will be performed
 
@@ -81,34 +89,42 @@ class Preprocessing:
         mp_mean = pd.DataFrame()
         
         while date <= lastDate:
-            dirname = os.path.dirname(os.path.abspath("__file__"))
-            directory = os.path.join(dirname,folder_name)
-            file_to_q = Preprocessing.dir_to_pick_file(self, directory, date, "_q.csv")
-            
-            daily_q = pd.read_csv(file_to_q, index_col=[0,1], header=[0,1])
-            
-            snr = daily_q.stack().T.loc[:, (slice(None), slice(None), "snr")]
+        
+            conditions = {'year': date.year, 'day_of_year': date.timetuple().tm_yday}
+            data_quality = db_func.fetch_all('data_quality', **conditions)
+    
+            daily_q = pd.DataFrame(data_quality)
+            daily_q = daily_q.iloc[:, [2,3,4,5,6,7,8]]
+            daily_q.columns = ['sys_name', 'frequency', 'station_name', 'snr', 'obs', 'gaps', 'multipath']
+            daily_q.set_index(['sys_name', 'frequency', 'station_name'], inplace=True)
+            daily_q = daily_q.unstack(level='station_name')
+            daily_q.columns = pd.MultiIndex.from_tuples(daily_q.columns, names=['station_name', 'metric'])
+            daily_q.columns = daily_q.columns.swaplevel('metric', 'station_name')
+            daily_q = daily_q.sort_index(axis=1)
+                        
+            snr = daily_q.stack(future_stack = True).T.loc[:, (slice(None), slice(None), "snr")]
             snr_mean = pd.concat([snr_mean, snr], axis=1)
 
-            gaps = daily_q.stack().T.loc[:, (slice(None), slice(None), "gaps")]
+            gaps = daily_q.stack(future_stack = True).T.loc[:, (slice(None), slice(None), "gaps")]
             gaps_mean = pd.concat([gaps_mean, gaps], axis=1)
             
-            obs = daily_q.stack().T.loc[:, (slice(None), slice(None), "obs")]
+            obs = daily_q.stack(future_stack = True).T.loc[:, (slice(None), slice(None), "obs")]
             obs_mean = pd.concat([obs_mean, obs], axis=1)
             
-            mp = daily_q.stack().T.loc[:, (slice(None), slice(None), "multipath")]
+            mp = daily_q.stack(future_stack = True).T.loc[:, (slice(None), slice(None), "multipath")]
             mp_mean = pd.concat([mp_mean, mp], axis=1)
 
             date += datetime.timedelta(days=1)
         
         df = pd.concat([snr_mean, obs_mean, gaps_mean, mp_mean], axis=1)
-        return df
 
+        return df
+    
 
     def dir_to_pick_file(self, directory, date, endpoint):
         '''
-        function to looking for direction to file which will correspond 
-        to files from a specific date
+        Function to looking for direction to file which will correspond 
+        to files from a specific date.
         :param directory: path to folder where script should looking for
         :param date: date of the status file that the script should looking for
         :param endpoint: extension of file (e.g. .csv)
@@ -127,7 +143,7 @@ class Preprocessing:
     def mean_parameters(self, selected_dataset, freq_done):
         '''
         :param selected_dataset: dataframe with only canals selected by user
-        :freq_done: selected canals by user
+        :param freq_done: selected canals by user
 
         :return dataframe with statists to all stations to all selected canals and timeperiod
         '''
@@ -152,7 +168,7 @@ class Preprocessing:
 
     def traverse_columns(self, mean_parameters, freq_done):
         '''
-        function to traverse columns when the first 4 columns is empty, it gives algorithm easier processing
+        Function to traverse columns when the first 4 columns is empty, it gives algorithm easier processing.
         :param mean_parameters: mean parameters to selected canals
         :param freq_done: it's only for number of selected canals
 
@@ -166,7 +182,7 @@ class Preprocessing:
 
     def select_thebest(self, mean_parameters_trav, freq_done):
         '''
-        function to select canal with the largest number of observations
+        Function to select canal with the largest number of observations.
         :param mean_parameters_trav: traversed mean parameters
         :param freq_done: it's only for number of selected canals
 
@@ -186,7 +202,6 @@ class Preprocessing:
         return to_go
 
 
-
 class Selecting:
     def __init__(self, ileprocent, clustering_method, MDCA_method, num_points):
         self.ileprocent = ileprocent
@@ -195,20 +210,16 @@ class Selecting:
         self.num_points = num_points
         
 
-    def dividing_stations(self, IGSNetwork, alg, num_points):
+    def dividing_stations(self, IGSNetwork, num_points):
         '''
-        implementation of clustering algorithm that depends user choice
+        Implementation of the KMeans clustering algorithm.
         :param IGSNetwork: dataframe with coordinates and statistics only coordinates XYZ are used
-        :param alg: algorithm of clusterisation possible choice are KMeans and AgglomerativeClustering
         :param num_points: number of center points of clusters e.g. if you choose 100 the algorithm divides all available stations to 100 clusters
 
         :return: dataframe with labels which mean assigment to cluster
         '''
-        if alg == "KMeans":
-            algorytm = KMeans(n_clusters=num_points, random_state=0)
-            
-        elif alg == "AgglomerativeClustering":
-            algorytm = AgglomerativeClustering(n_clusters=num_points)
+
+        algorytm = KMeans(n_clusters=num_points, random_state=0)
         
         labels = algorytm.fit(np.array(IGSNetwork.iloc[:,:3])).labels_
         labels = pd.DataFrame(labels, index=IGSNetwork.index,columns=['segment'])
@@ -217,11 +228,10 @@ class Selecting:
         return IGSNetwork
 
 
-    def MDCA(self, IGSNetwork, alg, weights, num_points):
+    def MDCA(self, IGSNetwork, weights, num_points):
         '''
-        function creating a ranking depending on the selected MDCA method depends of user choice
+        A function that creates a ranking based on the MDCA TOPSIS method.
         :param IGSNetwork: dataframe with coordinates, statistics and number of cluster to export in the end full dataframe
-        :param alg: algorithm of multi criteria, possible choice are TOPSIS and COPRAS
 
         :return: dataframe with column which are the ranking in each cluster
         '''
@@ -239,13 +249,8 @@ class Selecting:
             seg = IGSNetwork[IGSNetwork.loc[:,"segment"]==segment].drop("stats", axis=1)
             evaluation_matrix = np.array(seg.iloc[:,6:-1])
             
-            if alg == "TOPSIS":    
-                rank = top.topsis(evaluation_matrix, weights, criterias)
-                df = pd.DataFrame(rank, index=seg.index, columns=["TOPSIS"])
-                
-            elif alg == "COPRAS":
-                rank = cop.copras_method(evaluation_matrix, weights, criterias2)
-                df = pd.DataFrame(rank, index=seg.index, columns=["COPRAS"])
+            rank = top.topsis(evaluation_matrix, weights, criterias)
+            df = pd.DataFrame(rank, index=seg.index, columns=["TOPSIS"])
             
             mat = pd.concat([mat, df])
         IGSNetwork = pd.concat([IGSNetwork, mat], axis=1)

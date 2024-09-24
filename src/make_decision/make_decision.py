@@ -4,25 +4,54 @@ import datetime
 from functions import Preprocessing as pre
 from functions import Selecting as sel
 import yaml
+import sys
+import subprocess
+import time
 import warnings
 
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
+src_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+modules_path = os.path.join(src_path, 'modules')
+sys.path.append(modules_path)
+from database_manager_SQLite import DatabaseManager
+
+
+def update_stations_and_satellites_data(update_IGS_Network_file_path, update_Satellite_list_file_path):
+    '''
+    Updates data on IGS stations and satellite PRN numbers in the database.
+    :param update_IGS_Network_file_path: path to the script responsible for updating the IGS station
+    :param update_Satellite_list_file_path: path to the script responsible for updating satellite PRN numbers
+    '''
+    try:
+        IGS_Network_list_update = subprocess.run(['python', update_IGS_Network_file_path], check = True, capture_output = True, text = True)
+        Satellite_list_update = subprocess.run(['python', update_Satellite_list_file_path], check = True, capture_output = True, text = True)
+        print(IGS_Network_list_update.stdout)
+        print(Satellite_list_update.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"Error occurred: {e.stderr}")
+
 
 def main():
+    update_data = True
+    
+    update_IGS_Network = os.path.abspath(os.path.join(os.path.dirname(__file__), '../modules/update_IGS_Network_DATABASE.py'))
+    update_Satellite_list = os.path.abspath(os.path.join(os.path.dirname(__file__), '../modules/update_Satellite_list_DATABASE.py'))
+    
+    if update_data:
+        update_stations_and_satellites_data(update_IGS_Network, update_Satellite_list)  
 
     with open("config.yml", "r") as f:
         config = yaml.safe_load(f)
         
     freq_done = [tuple(map(str, x.split(','))) for x in config['freq_done']]
     
-    print(freq_done)
     date = datetime.date(config['start_date']['year'],
                          config['start_date']['month'],
                          config['start_date']['day'])
     
     lastDate = datetime.date(config['lastDate']['year'],
-                         config['lastDate']['month'],
-                         config['lastDate']['day'])
+                             config['lastDate']['month'],
+                             config['lastDate']['day'])
     num_points = config['num_points']
     ileprocent = config['ileprocent']
     MDCA_method = config['MDCA_method']
@@ -40,14 +69,17 @@ def main():
         
     preprocessing = pre(date, lastDate, sys_bar, freq_done, weights)
     selecting = sel(ileprocent, clustering_method, MDCA_method, num_points)
+    
+    db_manager = DatabaseManager(database_name = '../database/rinexav_db.db')
+    file = db_manager.fetch_all('stations', **{'1': 1})
+    IGSNetwork = pd.DataFrame(file)
+    IGSNetwork = IGSNetwork.iloc[:, [1, 2, 3, 4, 5, 6, 7, 9]]
+    IGSNetwork.columns = ['#StationName', 'X', 'Y', 'Z', 'Latitude', 'Longitude', 'Height', 'pr_level']
+    IGSNetwork = IGSNetwork.set_index('#StationName')
+    
+    IGSNetwork = preprocessing.availability(db_manager, IGSNetwork, date, lastDate)
 
-    dirname = os.path.dirname(os.path.abspath("__file__"))
-    dir_to_station_list = os.path.join(dirname, "station_coords.csv")
-    IGSNetwork = pd.read_csv(dir_to_station_list).set_index("#StationName")
-
-    IGSNetwork = preprocessing.availability(IGSNetwork, "rv3_stat", date, lastDate)
-
-    df = preprocessing.process_file("rv3_stat", date, lastDate)
+    df = preprocessing.process_file(db_manager, date, lastDate)
     freq = df.loc[:, (sys_bar, slice(None), slice(None))].columns.to_list()
     freq = [tuple(list(chanel)[:2]) for chanel in freq]
     freq = sorted(list(set(freq)))
@@ -72,8 +104,8 @@ def main():
         IGSNetwork = pd.concat([IGSNetwork.iloc[:,:8], mean_parameters_ready], axis=1)
         IGSNetwork = IGSNetwork[IGSNetwork.loc[:,"stats"]>=ileprocent]
         
-        IGSNetwork = selecting.dividing_stations(IGSNetwork, clustering_method, num_points)
-        IGSNetwork = selecting.MDCA(IGSNetwork, MDCA_method, weights, num_points)
+        IGSNetwork = selecting.dividing_stations(IGSNetwork, num_points)
+        IGSNetwork = selecting.MDCA(IGSNetwork, weights, num_points)
         wybor = IGSNetwork[IGSNetwork.loc[:,MDCA_method]==1].iloc[:,3:]
         IGSNetwork = IGSNetwork.iloc[:,3:]
         

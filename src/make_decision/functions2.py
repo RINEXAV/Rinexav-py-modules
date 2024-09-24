@@ -7,6 +7,7 @@ from sklearn.cluster import KMeans, AgglomerativeClustering
 import topsis_FG as top
 import copras as cop
 
+
 def how_empty(file, IGSNetwork):
     for z in file.columns:
         if file[z].sum() == 0:
@@ -15,6 +16,7 @@ def how_empty(file, IGSNetwork):
             except(KeyError):
                 continue
     return IGSNetwork
+
 
 def dir_to_pick_file(directory, date, endpoint):
     
@@ -27,12 +29,10 @@ def dir_to_pick_file(directory, date, endpoint):
             s.append(os.path.join(directory, k))
     return s[0]
 
-def dividing_stations(IGSNetwork, alg, num_points):
-    if alg == "KMeans":
-        algorytm = KMeans(n_clusters=num_points, random_state=0)
-        
-    elif alg == "AgglomerativeClustering":
-        algorytm = AgglomerativeClustering(n_clusters=num_points)
+
+def dividing_stations(IGSNetwork, num_points):
+
+    algorytm = KMeans(n_clusters=num_points, random_state=0)
     
     labels = algorytm.fit(np.array(IGSNetwork.iloc[:,:3])).labels_
     labels = pd.DataFrame(labels, index=IGSNetwork.index,columns=['segment'])
@@ -40,8 +40,9 @@ def dividing_stations(IGSNetwork, alg, num_points):
     
     return IGSNetwork
 
+
 #Multiple-criteria decision analysis
-def MDCA(IGSNetwork, alg, weights, num_points, num_hz):
+def MDCA(IGSNetwork, weights, num_points, num_hz):
     mat = pd.DataFrame()
     
     crit = [1, 1, -1, -1]
@@ -57,22 +58,19 @@ def MDCA(IGSNetwork, alg, weights, num_points, num_hz):
         seg = IGSNetwork[IGSNetwork.loc[:,"segment"]==segment].drop("stats", axis=1)
         evaluation_matrix = np.array(seg.iloc[:,6:-1])
 
-        if alg == "TOPSIS":
-            rank = top.topsis(evaluation_matrix, weights, criterias)
-            df = pd.DataFrame(rank, index=seg.index, columns=["TOPSIS"])
-            
-        elif alg == "COPRAS":
-            rank = cop.copras_method(evaluation_matrix, weights, criterias2)
-            df = pd.DataFrame(rank, index=seg.index, columns=["COPRAS"])
+        rank = top.topsis(evaluation_matrix, weights, criterias)
+        df = pd.DataFrame(rank, index=seg.index, columns=["TOPSIS"])
         
         mat = pd.concat([mat, df])
     IGSNetwork = pd.concat([IGSNetwork, mat], axis=1)
 
     return IGSNetwork
 
-def only_ones(IGSNetwork, method):
-    IGSNetwork = IGSNetwork[IGSNetwork.loc[:,method]==1]
+
+def only_ones(IGSNetwork):
+    IGSNetwork = IGSNetwork[IGSNetwork.loc[:,"TOPSIS"]==1]
     return IGSNetwork
+
 
 def mean_all(out, freq_done1):
     full_mean = pd.DataFrame()
@@ -83,7 +81,8 @@ def mean_all(out, freq_done1):
             full_mean = pd.concat([full_mean, d], axis=1)
     return full_mean
 
-def process_file(IGSNetwork, folder_name, date, lastDate):
+
+def process_file(IGSNetwork, db_func, date, lastDate):
     print("Przetwarzam pliki...")
     snr_mean2 = pd.DataFrame()
     gaps_mean2 = pd.DataFrame()
@@ -93,20 +92,32 @@ def process_file(IGSNetwork, folder_name, date, lastDate):
     sys = []
     i=0
     while date <= lastDate:
-        dirname = os.path.dirname(os.path.abspath("__file__"))
-        directory = os.path.join(dirname,folder_name)
-        
-        file_to_av = dir_to_pick_file(directory, date, ".csv")
-        file_to_q = dir_to_pick_file(directory, date, "_q.csv")
-        
-        plik = pd.read_csv(file_to_av, index_col=0)
-        plik2 = pd.read_csv(file_to_q, index_col=[0,1], header=[0,1])
-        plik4 = pd.read_csv(file_to_q).iloc[:,0].to_list()
 
+        conditions = {'year': date.year, 'day_of_year': date.timetuple().tm_yday}
+        data_availability = db_func.fetch_all('data_availability', **conditions)
+        data_quality = db_func.fetch_all('data_quality', **conditions)
+                
+        plik = pd.DataFrame(data_availability)
+        plik = plik.iloc[:, [2,3,4,5]]
+        plik.columns = ['sys_name', 'PRN', 'station_name', 'availability']
+        unique_pairs = plik[['sys_name', 'PRN']].drop_duplicates()
+        plik = plik.pivot_table(index = ['sys_name', 'PRN'], columns = 'station_name', values = 'availability', dropna = False)
+        plik = plik.loc[unique_pairs.set_index(['sys_name', 'PRN']).index]
+        
+        plik2 = pd.DataFrame(data_quality)
+        plik2 = plik2.iloc[:, [2,3,4,5,6,7,8]]
+        plik2.columns = ['sys_name', 'frequency', 'station_name', 'snr', 'obs', 'gaps', 'multipath']
+        plik2.set_index(['sys_name', 'frequency', 'station_name'], inplace=True)
+        plik2 = plik2.unstack(level='station_name')
+        plik2.columns = pd.MultiIndex.from_tuples(plik2.columns, names=['station_name', 'metric'])
+        plik2.columns = plik2.columns.swaplevel('metric', 'station_name')
+        plik2 = plik2.sort_index(axis=1)
+        
+        plik4 = plik2.reset_index().iloc[:, 0].to_list()
+        
         for y in plik4:
             if type(y) is str:
                 sys.append(y)
-        
         IGSNetwork = how_empty(plik, IGSNetwork)
         
         snr2 = plik2.stack().T.loc[:, (slice(None), slice(None), "snr")]
@@ -123,7 +134,8 @@ def process_file(IGSNetwork, folder_name, date, lastDate):
         
         i+=1
         date += datetime.timedelta(days=1)
-    
+
     df = pd.concat([snr_mean2, obs_mean2, gaps_mean2, mp_mean2], axis=1)
     sys = sorted(list(set(sys)))
+
     return df, i, sys
