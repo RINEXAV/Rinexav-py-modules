@@ -3,7 +3,7 @@
 Install the latest Python version
 The Python can be found in the following link: https://www.python.org/downloads/.<br>
 A Python version 3.8 or higher is recommended.
-
+If you are using the GFZRNX software, download it (https://gnss.gfz.de/services/gfzrnx) and place the .exe file in the appropriate folder.
 After the succesful installation of Python, the user should install several packages that are required for the execution of the optimization code.<br>
 Installation of packages should be done in the up-to-date versions.
 <li>pandas</li>
