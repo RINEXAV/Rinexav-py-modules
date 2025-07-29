@@ -21,3 +21,4 @@ Installation of packages should be done in the up-to-date versions.
 <li>base64</li>
 <li>branca</li>
 <li>folium</li>
+This work was supported by the National Science Centre, Poland (NCN), Grant No. UMO-2021/42/E/ST10/00020.
